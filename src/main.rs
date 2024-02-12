@@ -223,7 +223,7 @@ fn main() -> Result<(), String> {
     }
 
     let input_file = &args[1];
-    println!("Input file: {}", input_file);
+    // println!("Input file: {}", input_file);
 
     let mut lexer = Lexer::new(input_file)?;
 

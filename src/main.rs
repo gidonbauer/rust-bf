@@ -200,13 +200,11 @@ impl Interpreter {
                 Token::JumpZero(jump_addr) => {
                     if self.cells[self.data_ptr] == 0 {
                         instr_ptr = jump_addr;
-                        continue;
                     }
                 }
                 Token::JumpNonZero(jump_addr) => {
                     if self.cells[self.data_ptr] != 0 {
                         instr_ptr = jump_addr;
-                        continue;
                     }
                 }
             }

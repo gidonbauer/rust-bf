@@ -1,1 +1,5 @@
 /target
+
+bf_code/*.ll
+
+notes.txt

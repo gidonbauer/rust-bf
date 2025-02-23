@@ -1,236 +1,351 @@
-use std::io::Read;
+use std::fs::File;
+use std::io::prelude::*;
 
-// > 	Increment the data pointer by one (to point to the next cell to the right).
-// < 	Decrement the data pointer by one (to point to the next cell to the left).
-// + 	Increment the byte at the data pointer by one.
-// - 	Decrement the byte at the data pointer by one.
-// . 	Output the byte at the data pointer.
-// , 	Accept one byte of input, storing its value in the byte at the data pointer.
-// [ 	If the byte at the data pointer is zero, then instead of moving the instruction pointer forward to the next command, jump it forward to the command after the matching ] command.
-// ] 	If the byte at the data pointer is nonzero, then instead of moving the instruction pointer forward to the next command, jump it back to the command after the matching [ command.
+mod interpreter;
+use interpreter::*;
 
-#[derive(Debug, Clone)]
-enum Token {
-    IncPtr(usize),
-    DecPtr(usize),
-    IncByte(u8),
-    DecByte(u8),
-    Output,
-    Input,
-    JumpZero(usize),
-    JumpNonZero(usize),
-}
-const INVALID_JUMP_ADDR: usize = usize::MAX;
+// fn transpile(filename: String, prog: &Program) -> Result<(), String> {
+//     let mut file = match File::create(filename.clone()) {
+//         Ok(f) => f,
+//         Err(err) => return Err(format!("Could not open file `{filename}`: {err}")),
+//     };
+//
+//     // .global _main
+//     // .align 4
+//     //
+//     // .text
+//     // _main:
+//     writeln!(file, ".global _main").unwrap();
+//     writeln!(file, ".align 4").unwrap();
+//     writeln!(file, "").unwrap();
+//     writeln!(file, ".text").unwrap();
+//     writeln!(file, "_main:").unwrap();
+//
+//     writeln!(file, "  ; Get address of buffer and save it to x0").unwrap();
+//     writeln!(file, "  adrp x0, buffer@PAGE").unwrap();
+//     writeln!(file, "  add  x0, x0, buffer@PAGEOFF").unwrap();
+//     writeln!(file, "").unwrap();
+//
+//     for (i, token) in prog.instr.iter().enumerate() {
+//         match token {
+//             Token::IncPtr(count) => {
+//                 writeln!(file, "  add  x0, x0, #{count}").unwrap();
+//                 writeln!(file, "").unwrap();
+//             }
+//             Token::DecPtr(count) => {
+//                 writeln!(file, "  sub  x0, x0, #{count}").unwrap();
+//                 writeln!(file, "").unwrap();
+//             }
+//             Token::IncByte(count) => {
+//                 writeln!(file, "  ldr  x1, [x0]").unwrap();
+//                 writeln!(file, "  add  x1, x1, #{count}").unwrap();
+//                 writeln!(file, "  str  x1, [x0]").unwrap();
+//                 writeln!(file, "").unwrap();
+//             }
+//             Token::DecByte(count) => {
+//                 writeln!(file, "  ldr  x1, [x0]").unwrap();
+//                 writeln!(file, "  sub  x1, x1, #{count}").unwrap();
+//                 writeln!(file, "  str  x1, [x0]").unwrap();
+//                 writeln!(file, "").unwrap();
+//             }
+//             Token::Output => {
+//                 writeln!(file, "  str  x0, [sp]").unwrap();
+//                 writeln!(file, "  mov  x1, x0").unwrap();
+//                 writeln!(file, "  mov  x0, #1").unwrap();
+//                 writeln!(file, "  mov  x2, #1").unwrap();
+//                 writeln!(file, "  mov  x16, #4").unwrap();
+//                 writeln!(file, "  svc  0").unwrap();
+//                 writeln!(file, "  ldr  x0, [sp]").unwrap();
+//                 writeln!(file, "").unwrap();
+//             }
+//             Token::Input => todo!("Input"),
+//             Token::JumpZero(jump_addr) => {
+//                 writeln!(file, "  ldr  x1, [x0]").unwrap();
+//                 writeln!(file, "  cmp  x1, #0").unwrap();
+//                 writeln!(file, "  b.eq label{jump_addr}").unwrap();
+//                 writeln!(file, "label{i}:").unwrap();
+//                 writeln!(file, "").unwrap();
+//             }
+//             Token::JumpNonZero(jump_addr) => {
+//                 writeln!(file, "  ldr  x1, [x0]").unwrap();
+//                 writeln!(file, "  cmp  x1, #0").unwrap();
+//                 writeln!(file, "  b.ne label{jump_addr}").unwrap();
+//                 writeln!(file, "label{i}:").unwrap();
+//                 writeln!(file, "").unwrap();
+//             }
+//         }
+//     }
+//
+//     writeln!(file, "  ; Exit syscall").unwrap();
+//     writeln!(file, "  mov  x0, #0").unwrap();
+//     writeln!(file, "  mov  x16, #1").unwrap();
+//     writeln!(file, "  svc  0").unwrap();
+//
+//     writeln!(file, "").unwrap();
+//     writeln!(file, ".data").unwrap();
+//     writeln!(file, "buffer: .zero 30000").unwrap();
+//
+//     Ok(())
+// }
 
-struct Lexer {
-    content: Vec<u8>,
-    cursor: usize,
-}
-
-impl Lexer {
-    fn new(input_file: &String) -> Result<Self, String> {
-        match std::fs::read(input_file) {
-            Ok(content) => Ok(Self { content, cursor: 0 }),
-            Err(err) => Err(format!("Could not read file `{input_file}`: {err}")),
-        }
+fn transpile(filename: &String, prog: &Program) -> Result<(), String> {
+    if !filename.ends_with(".ll") {
+        return Err(format!("filename must end with `.ll` but is `{filename}`"));
     }
 
-    fn is_instr(&self, code: u8) -> bool {
-        code == '>' as u8
-            || code == '<' as u8
-            || code == '+' as u8
-            || code == '-' as u8
-            || code == '.' as u8
-            || code == ',' as u8
-            || code == '[' as u8
-            || code == ']' as u8
-    }
-}
+    let mut file = match File::create(filename.clone()) {
+        Ok(f) => f,
+        Err(err) => return Err(format!("Could not open file `{filename}`: {err}")),
+    };
 
-impl Iterator for Lexer {
-    type Item = u8;
+    const BUFFER_SIZE: i32 = 1024;
+    writeln!(
+        file,
+        "@buffer = internal global [{BUFFER_SIZE} x i32] zeroinitializer, align 4"
+    )
+    .unwrap();
+    writeln!(file, "").unwrap();
 
-    fn next(&mut self) -> Option<Self::Item> {
-        while self.cursor < self.content.len() && !self.is_instr(self.content[self.cursor]) {
-            self.cursor += 1;
-        }
+    // What is the correct symbol name for stdout?
+    const STDOUT_SYMBOL_NAME: &str = "@__stdoutp";
+    writeln!(file, "{STDOUT_SYMBOL_NAME} = external global ptr, align 8").unwrap();
+    const STDIN_SYMBOL_NAME: &str = "@__stdinp";
+    writeln!(file, "{STDIN_SYMBOL_NAME} = external global ptr, align 8").unwrap();
+    writeln!(file, "").unwrap();
 
-        if self.cursor >= self.content.len() {
-            return None;
-        }
+    writeln!(file, "define i32 @main() {{").unwrap();
+    writeln!(file, "  ; Get address of buffer and save it to ptr").unwrap();
+    writeln!(file, "  %data_ptr = alloca ptr, align 8").unwrap();
+    writeln!(file, "  store ptr @buffer, ptr %data_ptr, align 8").unwrap();
+    writeln!(file, "").unwrap();
 
-        let res = Some(self.content[self.cursor]);
-        self.cursor += 1;
-        res
-    }
-}
+    let mut var_counter: i32 = 1;
+    for (this_addr, token) in prog.instr.iter().enumerate() {
+        match token {
+            Token::IncPtr(count) => {
+                writeln!(file, "  ; Advance %data_ptr by {count}").unwrap();
+                writeln!(file, "  %{var_counter} = load ptr, ptr %data_ptr, align 8").unwrap();
+                var_counter += 1;
+                writeln!(
+                    file,
+                    "  %{var_counter} = getelementptr inbounds i32, ptr %{}, i64 {count}",
+                    var_counter - 1
+                )
+                .unwrap();
+                writeln!(file, "  store ptr %{var_counter}, ptr %data_ptr, align 8").unwrap();
+                var_counter += 1;
+                writeln!(file, "").unwrap();
+            }
 
-struct Program {
-    instr: Vec<Token>,
-}
+            Token::DecPtr(count) => {
+                writeln!(file, "  ; Advance %data_ptr by -{count}").unwrap();
+                writeln!(file, "  %{var_counter} = load ptr, ptr %data_ptr, align 8").unwrap();
+                var_counter += 1;
+                writeln!(
+                    file,
+                    "  %{var_counter} = getelementptr inbounds i32, ptr %{}, i64 -{count}",
+                    var_counter - 1
+                )
+                .unwrap();
+                writeln!(file, "  store ptr %{var_counter}, ptr %data_ptr, align 8").unwrap();
+                var_counter += 1;
+                writeln!(file, "").unwrap();
+            }
 
-impl Program {
-    fn new() -> Self {
-        Self {
-            instr: Vec::<Token>::new(),
-        }
-    }
+            Token::IncByte(count) => {
+                writeln!(file, "  ; Increment value at %data_ptr by {count}").unwrap();
+                let ptr_num = var_counter;
+                writeln!(file, "  %{ptr_num} = load ptr, ptr %data_ptr, align 8").unwrap();
+                var_counter += 1;
+                writeln!(file, "  %{var_counter} = load i32, ptr %{ptr_num}, align 4").unwrap();
+                var_counter += 1;
+                writeln!(
+                    file,
+                    "  %{var_counter} = add nsw i32 %{}, {count}",
+                    var_counter - 1
+                )
+                .unwrap();
+                writeln!(file, "  store i32 %{var_counter}, ptr %{ptr_num}, align 4").unwrap();
+                var_counter += 1;
+                writeln!(file, "").unwrap();
+            }
 
-    fn count_instr(&self, next_token: &mut Option<u8>, lexer: &mut Lexer, instr: u8) -> usize {
-        let mut count = 1;
-        *next_token = lexer.next();
-        while (next_token.is_some()) && (next_token.unwrap() == instr) {
-            *next_token = lexer.next();
-            count += 1;
-        }
-        count
-    }
+            Token::DecByte(count) => {
+                writeln!(file, "  ; Decrement value at %data_ptr by {count}").unwrap();
+                let ptr_num = var_counter;
+                writeln!(file, "  %{ptr_num} = load ptr, ptr %data_ptr, align 8").unwrap();
+                var_counter += 1;
+                writeln!(file, "  %{var_counter} = load i32, ptr %{ptr_num}, align 4").unwrap();
+                var_counter += 1;
+                writeln!(
+                    file,
+                    "  %{var_counter} = sub nsw i32 %{}, {count}",
+                    var_counter - 1
+                )
+                .unwrap();
+                writeln!(file, "  store i32 %{var_counter}, ptr %{ptr_num}, align 4").unwrap();
+                var_counter += 1;
+                writeln!(file, "").unwrap();
+            }
 
-    fn tokenize(&mut self, lexer: &mut Lexer) {
-        let mut next_token = lexer.next();
-        while next_token.is_some() {
-            match next_token.unwrap() as char {
-                '>' => {
-                    let count = self.count_instr(&mut next_token, lexer, '>' as u8);
-                    self.instr.push(Token::IncPtr(count));
-                }
-                '<' => {
-                    let count = self.count_instr(&mut next_token, lexer, '<' as u8);
-                    self.instr.push(Token::DecPtr(count));
-                }
-                '+' => {
-                    let count = self.count_instr(&mut next_token, lexer, '+' as u8);
-                    self.instr.push(Token::IncByte(count as u8));
-                }
-                '-' => {
-                    let count = self.count_instr(&mut next_token, lexer, '-' as u8);
-                    self.instr.push(Token::DecByte(count as u8));
-                }
-                '.' => {
-                    self.instr.push(Token::Output);
-                    next_token = lexer.next();
-                }
-                ',' => {
-                    self.instr.push(Token::Input);
-                    next_token = lexer.next();
-                }
-                '[' => {
-                    self.instr.push(Token::JumpZero(INVALID_JUMP_ADDR));
-                    next_token = lexer.next();
-                }
-                ']' => {
-                    self.instr.push(Token::JumpNonZero(INVALID_JUMP_ADDR));
-                    next_token = lexer.next();
-                }
-                _ => panic!("Unreachable."),
+            Token::Output => {
+                writeln!(file, "  ; Print value at %data_ptr").unwrap();
+                writeln!(file, "  %{var_counter} = load ptr, ptr %data_ptr, align 8").unwrap();
+                var_counter += 1;
+                writeln!(
+                    file,
+                    "  %{var_counter} = load i32, ptr %{}, align 4",
+                    var_counter - 1
+                )
+                .unwrap();
+                var_counter += 1;
+                writeln!(
+                    file,
+                    "  %{var_counter} = load ptr, ptr {STDOUT_SYMBOL_NAME}, align 8"
+                )
+                .unwrap();
+                var_counter += 1;
+                writeln!(
+                    file,
+                    "  %{var_counter} = call i32 @putc(i32 %{}, ptr %{})",
+                    var_counter - 2,
+                    var_counter - 1
+                )
+                .unwrap();
+                var_counter += 1;
+                writeln!(file, "").unwrap();
+            }
+
+            Token::Input => {
+                writeln!(file, "  ; Read value from stdin into %data_ptr").unwrap();
+                writeln!(
+                    file,
+                    "  %{var_counter} = load ptr, ptr {STDIN_SYMBOL_NAME}, align 8"
+                )
+                .unwrap();
+                var_counter += 1;
+                writeln!(
+                    file,
+                    "  %{var_counter} = call i32 @getc(ptr %{})",
+                    var_counter - 1
+                )
+                .unwrap();
+                var_counter += 1;
+                writeln!(file, "  %{var_counter} = load ptr, ptr %data_ptr, align 8").unwrap();
+                writeln!(
+                    file,
+                    "  store i32 %{}, ptr %{var_counter}, align 4",
+                    var_counter - 1
+                )
+                .unwrap();
+                var_counter += 1;
+                writeln!(file, "").unwrap();
+            }
+
+            Token::JumpZero(jump_addr) => {
+                writeln!(
+                    file,
+                    "  ; Jump to l{jump_addr} if value at %data_ptr is zero"
+                )
+                .unwrap();
+                writeln!(file, "  %{var_counter} = load ptr, ptr %data_ptr, align 8").unwrap();
+                var_counter += 1;
+                writeln!(
+                    file,
+                    "  %{var_counter} = load i32, ptr %{}, align 4",
+                    var_counter - 1
+                )
+                .unwrap();
+                var_counter += 1;
+                writeln!(
+                    file,
+                    "  %{var_counter} = icmp eq i32 %{}, 0",
+                    var_counter - 1
+                )
+                .unwrap();
+                writeln!(
+                    file,
+                    "  br i1 %{var_counter}, label %l{jump_addr}, label %l{this_addr}"
+                )
+                .unwrap();
+                var_counter += 1;
+                writeln!(file, "l{this_addr}:").unwrap();
+                writeln!(file, "").unwrap();
+            }
+
+            Token::JumpNonZero(jump_addr) => {
+                writeln!(
+                    file,
+                    "  ; Jump to l{jump_addr} if value at %data_ptr is non-zero"
+                )
+                .unwrap();
+                writeln!(file, "  %{var_counter} = load ptr, ptr %data_ptr, align 8").unwrap();
+                var_counter += 1;
+                writeln!(
+                    file,
+                    "  %{var_counter} = load i32, ptr %{}, align 4",
+                    var_counter - 1
+                )
+                .unwrap();
+                var_counter += 1;
+                writeln!(
+                    file,
+                    "  %{var_counter} = icmp ne i32 %{}, 0",
+                    var_counter - 1
+                )
+                .unwrap();
+                writeln!(
+                    file,
+                    "  br i1 %{var_counter}, label %l{jump_addr}, label %l{this_addr}"
+                )
+                .unwrap();
+                var_counter += 1;
+                writeln!(file, "l{this_addr}:").unwrap();
+                writeln!(file, "").unwrap();
             }
         }
     }
 
-    fn backpatch_jump_addr(&mut self) -> Result<(), String> {
-        let mut jump_zero_stack = Vec::<usize>::new();
-        for (idx, token) in self.instr.clone().iter().enumerate() {
-            match token {
-                Token::JumpZero(_) => jump_zero_stack.push(idx),
-                Token::JumpNonZero(_) => {
-                    if let Some(jump_zero_addr) = jump_zero_stack.pop() {
-                        self.instr[idx] = Token::JumpNonZero(jump_zero_addr);
-                        self.instr[jump_zero_addr] = Token::JumpZero(idx);
-                    } else {
-                        return Err("Missing `[` for `]`".into());
-                    }
-                }
-                _ => (),
-            }
-        }
+    writeln!(file, "  ret i32 0").unwrap();
+    writeln!(file, "}}").unwrap();
+    writeln!(file, "").unwrap();
+    writeln!(file, "declare i32 @putc(i32, ptr)").unwrap();
+    writeln!(file, "declare i32 @getc(ptr)").unwrap();
 
-        if jump_zero_stack.len() > 0 {
-            return Err(format!("Missing `]` for {} `[`", jump_zero_stack.len()));
-        }
-
-        Ok(())
-    }
-}
-
-fn read_char() -> u8 {
-    let mut stdin = std::io::stdin();
-    let mut buf = [0 as u8; 1];
-    match stdin.read_exact(&mut buf) {
-        Ok(()) => buf[0],
-        Err(err) => {
-            panic!("Could not read char from stdin: {err}");
-        }
-    }
-}
-
-struct Interpreter {
-    cells: Vec<u8>,
-    data_ptr: usize,
-}
-
-impl Interpreter {
-    fn new() -> Self {
-        Self {
-            cells: vec![0; 30000],
-            data_ptr: 0,
-        }
-    }
-
-    fn run(&mut self, prog: &Program) {
-        let mut instr_ptr = 0;
-
-        while instr_ptr < prog.instr.len() {
-            match prog.instr[instr_ptr] {
-                Token::IncPtr(count) => {
-                    assert!(self.data_ptr + count < self.cells.len());
-                    self.data_ptr += count;
-                }
-                Token::DecPtr(count) => {
-                    assert!(self.data_ptr >= count);
-                    self.data_ptr -= count;
-                }
-                Token::IncByte(count) => {
-                    self.cells[self.data_ptr] = self.cells[self.data_ptr].wrapping_add(count)
-                }
-                Token::DecByte(count) => {
-                    self.cells[self.data_ptr] = self.cells[self.data_ptr].wrapping_sub(count)
-                }
-                Token::Output => print!("{}", self.cells[self.data_ptr] as char),
-                Token::Input => self.cells[self.data_ptr] = read_char(),
-                Token::JumpZero(jump_addr) => {
-                    if self.cells[self.data_ptr] == 0 {
-                        instr_ptr = jump_addr;
-                    }
-                }
-                Token::JumpNonZero(jump_addr) => {
-                    if self.cells[self.data_ptr] != 0 {
-                        instr_ptr = jump_addr;
-                    }
-                }
-            }
-            instr_ptr += 1;
-        }
-    }
+    Ok(())
 }
 
 fn main() -> Result<(), String> {
     let args: Vec<String> = std::env::args().collect();
 
     if args.len() < 2 {
-        return Err(format!("Usage: {} <input>: No input provided.", args[0]));
+        return Err(format!(
+            "Usage: {} <input file> [output file]: No input provided.",
+            args[0]
+        ));
     }
 
     let input_file = &args[1];
+    let output_file = if args.len() > 2 {
+        args[2].clone()
+    } else if args[1].ends_with(".bf") {
+        args[1].strip_suffix(".bf").unwrap().to_owned() + ".ll"
+    } else {
+        args[1].clone() + ".ll"
+    };
     // println!("Input file: {}", input_file);
+    // println!("Output file: {}", output_file);
 
     let mut lexer = Lexer::new(input_file)?;
 
     let mut prog = Program::new();
-    prog.tokenize(&mut lexer);
-    prog.backpatch_jump_addr()?;
+    prog.tokenize(&mut lexer)?;
 
-    let mut inter = Interpreter::new();
-    inter.run(&prog);
+    // let mut inter = Interpreter::new();
+    // inter.run(&prog);
+
+    transpile(&output_file, &prog)?;
+    println!("Wrote LLVM IR to `{output_file}`.");
 
     Ok(())
 }

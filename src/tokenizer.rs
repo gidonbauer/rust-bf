@@ -1,6 +1,4 @@
-#[path = "./lexer.rs"]
-mod lexer;
-pub use lexer::*;
+pub use super::lexer::*;
 
 // > 	Increment the data pointer by one (to point to the next cell to the right).
 // < 	Decrement the data pointer by one (to point to the next cell to the left).

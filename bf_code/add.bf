@@ -18,4 +18,4 @@ We use a loop to compute 48 = 6 * 8
 > -        Subtract 1 from c1
 ]
 < .        Print out c0 which has the value 55 which translates to "7"!
-
+>>>>>> ++++++++++ .

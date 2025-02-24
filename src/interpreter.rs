@@ -1,8 +1,6 @@
 use std::io::Read;
 
-#[path = "./tokenizer.rs"]
-mod tokenizer;
-pub use tokenizer::*;
+use super::tokenizer::*;
 
 fn read_char() -> u8 {
     let mut stdin = std::io::stdin();

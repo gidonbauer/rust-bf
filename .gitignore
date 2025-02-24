@@ -1,5 +1,6 @@
 /target
 
-bf_code/*.ll
+test_asm/
+test_llvm_ir/
 
 notes.txt

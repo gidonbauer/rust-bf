@@ -46,14 +46,6 @@ fn main() -> Result<(), String> {
         return Err(format!("Expected input file but got nothing."));
     };
 
-    // let output_file = if args.len() > 2 {
-    //     args[2].clone()
-    // } else if args[1].ends_with(".bf") {
-    //     args[1].strip_suffix(".bf").unwrap().to_owned() + ".ll"
-    // } else {
-    //     args[1].clone() + ".ll"
-    // };
-
     let mut lexer = Lexer::new(&input_file)?;
     let mut prog = Program::new();
     prog.tokenize(&mut lexer)?;

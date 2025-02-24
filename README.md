@@ -4,7 +4,15 @@ Interpreter for the esoteric programming language [brainfuck](https://en.wikiped
 
 ## Quickstart
 
+Run interpreter
+
 ```terminal
-$ cargo run ./bf_code/fizz_buzz.bf
+$ cargo run interpret ./bf_code/fizz_buzz.bf
 ```
 
+Transpile brainfuck code to LLVM IR and compile to native executable```terminal
+
+```terminal
+$ cargo run transpile ./bf_code/fizz_buzz.bf
+$ ./bf_code/fizz_buzz
+```

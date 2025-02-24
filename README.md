@@ -10,7 +10,7 @@ Run interpreter
 $ cargo run interpret ./bf_code/fizz_buzz.bf
 ```
 
-Transpile brainfuck code to LLVM IR and compile to native executable```terminal
+Transpile brainfuck code to LLVM IR and compile to native executable
 
 ```terminal
 $ cargo run transpile ./bf_code/fizz_buzz.bf

@@ -94,3 +94,6 @@ fn main() -> Result<(), String> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod test;
